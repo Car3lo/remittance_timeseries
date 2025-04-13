@@ -1,0 +1,174 @@
+---
+title: "Analyzing and Forecasting Philippine Remittances (Time Series Data)"
+output: html_notebook
+author: "Carlito"
+---
+
+```{r}
+library(fpp2)
+library(seastests)
+```
+
+## Loading datasets
+
+```{r}
+# don't forget to set directory with the remittance csv
+setwd("D:/New Documents/UPSE_4-2/Econ_132_FIJK/probsets")
+OFremit <- read.csv("remittance_ph.csv")
+```
+
+## Creating objects
+
+```{r}
+OFremit.ts <- ts(OFremit, frequency = 12, start = c(2013,1))
+OFremit2.ts <- window(OFremit.ts, start = c(2014,1))
+```
+
+## Plotting and testing for seasonality
+
+```{r}
+autoplot(OFremit2.ts[,2])+
+  ggtitle("Monthly Nominal Cash Remittances by OFWs, Jan 2014 - Jan 2025")+
+  xlab("Year")+
+  ylab("Million USD$ ")
+
+ggseasonplot(OFremit2.ts[,2])+
+  ggtitle("Seasonal Nominal Cash Remittances by OFWs, Jan 2014 - Jan 2025")+
+  xlab("Year")+
+  ylab("Million USD$ ")
+```
+
+In terms of trend, there is consistent upward direction from 2014 to 2025. This could be caused by many reasons such as increasing number of OFWs over the years or increased wages of OFWs. In 2020, the trend had a dip because of the Global Pandemic Event.
+
+In terms of seasonality, there are some seasonal peaks every year in July and December (sometimes October). This could be because July is when school starts and OFWs' families need to pay for tuition. The holiday effect of December could be the reason that fuels the spike of remittances in December.
+
+### Test for Seasonality
+
+-   HO: There is no seasonality in the time series data
+-   HA: There is seasonality in the time series data
+
+```{r}
+help(kw)
+kw(OFremit2.ts[,2], freq = 12, diff = TRUE, residuals = FALSE, autoarima = FALSE)
+```
+
+## Test and Training Set
+
+```{r}
+OFremit2.train <- window(OFremit2.ts, end = c(2022,12))
+OFremit2.test <- window(OFremit2.ts, start = c(2023,1))
+```
+
+## Modelling
+
+```{r}
+# Table Link lol: https://docs.google.com/document/d/16ZvdSRf0Fn_tTwucQ3PCigLDf1eMRDcQS9ZMgeHGJDc/edit?usp=sharing
+help(AIC)
+obs <- nrow(data.frame(OFremit2.train))
+# deterministic trend
+OFremit2_trend <- tslm(remittance ~ trend, data = OFremit2.train)
+summary(OFremit2_trend)
+AIC(OFremit2_trend)
+AIC(OFremit2_trend, k = log(obs))
+
+# quadratic trend
+OFremit2_qtrend <- tslm(remittance ~ poly(trend,2), data = OFremit2.train)
+summary(OFremit2_qtrend)
+AIC(OFremit2_qtrend)
+AIC(OFremit2_qtrend, k = log(obs))
+
+# seasonality
+OFremit2_season <- tslm(remittance ~ season, data = OFremit2.train)
+summary(OFremit2_season)
+AIC(OFremit2_season)
+AIC(OFremit2_season, k = log(obs))
+
+# trend+seasonality
+OFremit2_trendseason <- tslm(remittance ~ trend + season, data = OFremit2.train)
+summary(OFremit2_trendseason)
+AIC(OFremit2_trendseason)
+AIC(OFremit2_trendseason, k = log(obs))
+
+# quadratic trend+seasonality
+OFremit2_qtrendseason <- tslm(remittance ~ poly(trend,2) + season, data = OFremit2.train)
+summary(OFremit2_qtrendseason)
+AIC(OFremit2_qtrendseason)
+AIC(OFremit2_qtrendseason, k = log(obs))
+```
+
+![Summary Table](D:/New%20Documents/UPSE_4-2/Econ_132_FIJK/probsets/132.jpg) The inclusion of the trend on both the Deterministic (Linear) Trend and Trend + Seasonality Trend models are justifiable since the raw trend components have a statistically significant intercept.Both Models explain \~58% of the variation of remittance in the data.
+
+The first orthogonal trend component (Trend1) of both quadratic models are highlight significant.The second orthogonal Trend Component (trend2) is not significant however, but can probably say that Trend1 captures most of the non-linear trend in the data.
+
+It would make sense to include Seasonal Dummies. As seasons 7 (July), 10 (October) and 12 (December) are significant at P \< 0.10 and 0.01 respectively. These months deviate from the overall trend so it is important to capture them. The models with lowest AIC/BIC are the ones that include trend and seasonality. Which further supports accounting for the trend and seasonality when creating a linear model to fit the training data best.
+
+## Forecast
+```{r}
+print(nrow(data.frame(OFremit2.test))) #25
+OFremit2_trendf <- forecast(OFremit2_trend, h=25)
+OFremit2_qtrendf <- forecast(OFremit2_qtrend, h=25)
+OFremit2_seasonf <- forecast(OFremit2_season, h=25)
+OFremit2_trendseasonf <- forecast(OFremit2_trendseason, h=25)
+OFremit2_qtrendseasonf <- forecast(OFremit2_qtrendseason, h=25)
+```
+
+## Plotting
+```{r}
+autoplot(OFremit2.test[,2], series = "Test Series") +
+  autolayer(OFremit2_trendf, series = "Deterministic Trend", PI = FALSE) +
+  autolayer(OFremit2_qtrendf, series = "Quadratic Trend", PI = FALSE) +
+  autolayer(OFremit2_seasonf, series = "Seasonality", PI = FALSE) +
+  autolayer(OFremit2_trendseasonf, series = "Trend + Seasonality", PI = FALSE) +
+  autolayer(OFremit2_qtrendseasonf, series = "Quadratic Trend + Seasonality", PI = FALSE) +
+  xlab("Year") +
+  ylab("Million USD$") +
+  ggtitle("Forecasts for Monthly Nominal Cash Remittances by OFWs: Jan 2023-Jan 2025") +
+  scale_color_manual(values = c("Test Series" = "black",
+                                "Deterministic Trend" = "blue",   
+                                "Quadratic Trend" = "darkgreen",
+                                "Seasonality" = "purple",
+                                "Trend + Seasonality" = "orange",
+                                "Quadratic Trend + Seasonality" = "red")) +
+  guides(color = guide_legend(title = "Forecast"))
+```
+The best models should be orange and red (trend + seasonality). And from the plot it does seem like it.
+
+
+## Accuracy
+```{r}
+accuracy(OFremit2_trendf, OFremit2.test[,2])[,c("RMSE","MAE","MAPE")] # Trend
+accuracy(OFremit2_qtrendf, OFremit2.test[,2])[,c("RMSE","MAE","MAPE")] # Quadratic Trend
+accuracy(OFremit2_seasonf, OFremit2.test[,2])[,c("RMSE","MAE","MAPE")] # Seasonality
+accuracy(OFremit2_trendseasonf, OFremit2.test[,2])[,c("RMSE","MAE","MAPE")] # Trend + Seasonality
+accuracy(OFremit2_qtrendseasonf, OFremit2.test[,2])[,c("RMSE","MAE","MAPE")] # Quadratic  + Seasonality
+```
+The best model with the overall lower RMSE, MAE, MAPE would be the Trend + Seasonality. Quadratic Trend + Seasonality would also come close. From (AIC/BIC) and eye-test at the plots, orange or Trend + Seasonality seems to fit the Test Series best indeed.
+
+
+## Residual Diagnostics
+```{r}
+checkresiduals(OFremit2_trendseasonf)
+Box.test(residuals(OFremit2_trendseasonf), lag=4, fitdf=0, type="Ljung-Box")
+#H0: white noise/autocorrelation is not significantly different from zero.
+```
+Going from eye-tests and from the Residuals, the variation looks like it definitely changed ever since the pandemic hit. In the ACF, many lines exceed the threshold for white noise as well. Furthermore, from the Ljung-Box test, the p-value is 0.02 which means we reject the HO that the residuals exihibit white noise characetristics.
+
+
+## Forecasting the next quarter
+```{r}
+OFremit2_trendseasonf_new <- forecast(OFremit2_trendseason, h=27)
+OFremit2_trendseasonf_new #2835.905 2767.288 2979.364
+OFremit2.test #2835.90 2645.557 2737.834 
+
+Q12025 = 2860.166+2767.288+2979.364
+Q12024 = 2835.90+2645.557+2737.834
+((Q12025-Q12024)/(Q12024))*100
+```
+
+## Important
+**Due to Duterte's arrest, OFWs have scheduled a week in March where they will not send remittances as protest aka a shock.
+
+The model will not account for this "shock" and has probably overstated the remittances for that month of March. The model accounts for the expected value of the trend and seasonality that linearly fits the training data best.Shocks such as these typically not follow the seasonality or trend pattern. It is possible that this week disruption may not amount to much and due to white noise might not affect the forecast that much depending on the number of OFWs who support Duterte.
+
+Overall, it probably won't account for it. But it's still a good model to forecast remittances for that period.
+
