@@ -1,2 +1,2 @@
 # remittance_timeseries
-Analyzing and Forecasting Philippine Remittances (Time Series Data)
+Analyzing and Forecasting Philippine Remittances using R (Time Series Data)
